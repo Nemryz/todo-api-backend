@@ -36,6 +36,13 @@ class TaskInput(BaseModel):
 class TaskUpdate(BaseModel):
     text: str
 
+class TaskOrderUpdate(BaseModel):
+    id: int
+    order_index: int
+
+class ReorderPayload(BaseModel):
+    tasks: list[TaskOrderUpdate]
+
 
 # ─────────────────────────────────────────────
 # RUTAS (ENDPOINTS) DE LA API
@@ -58,10 +65,22 @@ def test_db():
 
 @app.get("/tasks")
 def get_tasks():
-    """Retorna todas las tareas ordenadas por fecha de creación."""
+    """Retorna todas las tareas ordenadas por orden y luego por fecha."""
     try:
-        res = supabase.table("tasks").select("*").order("created_at", desc=True).execute()
+        # Primero ordenamos por order_index ascendente, luego por fecha de creación descendente para los nuevos
+        res = supabase.table("tasks").select("*").order("order_index", desc=False).order("created_at", desc=True).execute()
         return res.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/tasks/reorder")
+def reorder_tasks(payload: ReorderPayload):
+    """Actualiza el orden de un lote de tareas."""
+    try:
+        # Actualiza cada tarea con su nuevo order_index
+        for t in payload.tasks:
+            supabase.table("tasks").update({"order_index": t.order_index}).eq("id", t.id).execute()
+        return {"message": "Orden actualizado exitosamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
