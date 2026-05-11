@@ -66,8 +66,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
             audience="authenticated",
         )
         return payload["sub"]  # UUID del usuario
-    except PyJWTError:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+    except PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"JWT error: {str(e)}")
 
 
 def get_db(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
