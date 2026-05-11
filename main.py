@@ -6,14 +6,21 @@ from supabase import create_client
 from dotenv import load_dotenv
 import jwt
 from jwt.exceptions import PyJWTError
+import base64
 import os
 
 load_dotenv()
 
-SUPABASE_URL        = os.getenv("SUPABASE_URL")
-SUPABASE_KEY        = os.getenv("SUPABASE_KEY")        # service_role (reservado para admin)
-SUPABASE_ANON_KEY   = os.getenv("SUPABASE_ANON_KEY")   # anon key (para usuarios autenticados)
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET") # JWT Secret del proyecto
+SUPABASE_URL      = os.getenv("SUPABASE_URL")
+SUPABASE_KEY      = os.getenv("SUPABASE_KEY")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+
+# El JWT Secret de Supabase está en base64 — hay que decodificarlo a bytes
+_jwt_secret_raw = os.getenv("SUPABASE_JWT_SECRET", "")
+try:
+    SUPABASE_JWT_SECRET = base64.b64decode(_jwt_secret_raw)
+except Exception:
+    SUPABASE_JWT_SECRET = _jwt_secret_raw.encode()
 
 app = FastAPI(title="Todo List API", version="3.0.0")
 
