@@ -4,7 +4,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client
 from dotenv import load_dotenv
-from jose import jwt, JWTError
+import jwt
+from jwt.exceptions import PyJWTError
 import os
 
 load_dotenv()
@@ -65,7 +66,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
             audience="authenticated",
         )
         return payload["sub"]  # UUID del usuario
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
 
