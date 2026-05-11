@@ -71,7 +71,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
 
 
 def get_db(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    """Cliente Supabase con el JWT del usuario → RLS aplica automáticamente."""
     client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
     client.postgrest.auth(credentials.credentials)
     return client
