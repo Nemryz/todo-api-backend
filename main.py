@@ -4,23 +4,13 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client
 from dotenv import load_dotenv
-import jwt
-from jwt.exceptions import PyJWTError
-import base64
 import os
 
 load_dotenv()
 
 SUPABASE_URL      = os.getenv("SUPABASE_URL")
-SUPABASE_KEY      = os.getenv("SUPABASE_KEY")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-
-# El JWT Secret de Supabase está en base64 — hay que decodificarlo a bytes
-_jwt_secret_raw = os.getenv("SUPABASE_JWT_SECRET", "")
-try:
-    SUPABASE_JWT_SECRET = base64.b64decode(_jwt_secret_raw)
-except Exception:
-    SUPABASE_JWT_SECRET = _jwt_secret_raw.encode()
+SUPABASE_KEY      = os.getenv("SUPABASE_KEY")      # service_role — verifica tokens
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY") # anon key — respeta RLS
 
 app = FastAPI(title="Todo List API", version="3.0.0")
 
@@ -66,15 +56,11 @@ class ReorderPayload(BaseModel):
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)) -> str:
     try:
-        payload = jwt.decode(
-            credentials.credentials,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-        return payload["sub"]  # UUID del usuario
-    except PyJWTError as e:
-        raise HTTPException(status_code=401, detail=f"JWT error: {str(e)}")
+        admin = create_client(SUPABASE_URL, SUPABASE_KEY)
+        response = admin.auth.get_user(credentials.credentials)
+        return response.user.id
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Auth error: {str(e)}")
 
 
 def get_db(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
