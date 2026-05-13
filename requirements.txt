@@ -4,3 +4,6 @@ supabase
 pydantic
 python-dotenv
 python-jose[cryptography]
+slowapi
+structlog
+cachetools
