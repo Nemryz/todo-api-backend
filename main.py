@@ -15,6 +15,7 @@ import time
 import os
 import uuid
 import re
+from datetime import datetime, timezone
 
 load_dotenv()
 
@@ -271,7 +272,9 @@ def get_db(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
 
 
 def invalidate_cache(user_id: str) -> None:
-    task_cache.pop(user_id, None)
+    keys_to_del = [k for k in task_cache if k.startswith(user_id)]
+    for k in keys_to_del:
+        task_cache.pop(k, None)
     subtask_cache.pop(user_id, None)
 
 
@@ -297,13 +300,19 @@ def get_tasks(
     request: Request,
     user_id: str = Depends(get_current_user),
     db=Depends(get_db),
+    archived: bool = False,
 ):
-    if user_id in task_cache:
-        return task_cache[user_id]
+    cache_key = f"{user_id}:archived={archived}"
+    if cache_key in task_cache:
+        return task_cache[cache_key]
     try:
+        query = db.table("tasks").select("*")
+        if archived:
+            query = query.not_.is_("archived_at", "null")
+        else:
+            query = query.is_("archived_at", "null")
         res = (
-            db.table("tasks")
-            .select("*")
+            query
             .order("order_index", desc=False)
             .order("created_at", desc=True)
             .execute()
@@ -315,7 +324,7 @@ def get_tasks(
                 t["subtasks"] = sub_res.data
             except Exception:
                 t["subtasks"] = []
-        task_cache[user_id] = tasks
+        task_cache[cache_key] = tasks
         return tasks
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error interno del servidor")
@@ -419,6 +428,80 @@ async def delete_task(
             raise HTTPException(status_code=404, detail="Tarea no encontrada")
         invalidate_cache(user_id)
         return {"message": "Tarea eliminada"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error interno del servidor") from e
+
+
+# ─────────────────────────────────────────────
+# ARCHIVE / RESTORE / DATE
+# ─────────────────────────────────────────────
+
+@app.put("/tasks/{task_id}/archive")
+@limiter.limit("30/minute")
+async def archive_task(
+    request: Request,
+    task_id: int,
+    user_id: str = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    validate_task_id(task_id)
+    await verify_task_owner(task_id, user_id, db)
+    try:
+        res = db.table("tasks").update({"archived_at": datetime.now(timezone.utc).isoformat()}).eq("id", task_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Tarea no encontrada")
+        invalidate_cache(user_id)
+        return res.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error interno del servidor") from e
+
+
+@app.put("/tasks/{task_id}/restore")
+@limiter.limit("30/minute")
+async def restore_task(
+    request: Request,
+    task_id: int,
+    user_id: str = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    validate_task_id(task_id)
+    await verify_task_owner(task_id, user_id, db)
+    try:
+        res = db.table("tasks").update({"archived_at": None}).eq("id", task_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Tarea no encontrada")
+        invalidate_cache(user_id)
+        return res.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error interno del servidor") from e
+
+
+@app.patch("/tasks/{task_id}/date")
+@limiter.limit("30/minute")
+async def update_task_date(
+    request: Request,
+    task_id: int,
+    payload: dict,
+    user_id: str = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    validate_task_id(task_id)
+    await verify_task_owner(task_id, user_id, db)
+    date_val = payload.get("due_date")
+    if date_val is not None and not isinstance(date_val, str):
+        raise HTTPException(status_code=400, detail="due_date debe ser string ISO o null")
+    try:
+        res = db.table("tasks").update({"due_date": date_val}).eq("id", task_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Tarea no encontrada")
+        invalidate_cache(user_id)
+        return res.data[0]
     except HTTPException:
         raise
     except Exception as e:
