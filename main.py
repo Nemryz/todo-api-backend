@@ -239,6 +239,15 @@ class SubtaskUpdate(BaseModel):
         return v.strip()
 
 
+class SubtaskOrderUpdate(BaseModel):
+    id: int
+    order_index: int
+
+
+class SubtaskReorderPayload(BaseModel):
+    subtasks: list[SubtaskOrderUpdate]
+
+
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
@@ -541,10 +550,13 @@ async def create_subtask(
     validate_task_id(task_id)
     await verify_task_owner(task_id, user_id, db)
     try:
+        max_res = db.table("subtasks").select("order_index").eq("task_id", task_id).order("order_index", desc=True).limit(1).execute()
+        next_order = (max_res.data[0]["order_index"] + 1) if max_res.data else 0
         res = db.table("subtasks").insert({
             "task_id": task_id,
             "user_id": user_id,
             "text": payload.text,
+            "order_index": next_order,
         }).execute()
         invalidate_cache(user_id)
         return res.data[0]
@@ -595,5 +607,25 @@ async def delete_subtask(
         return {"message": "Subtarea eliminada"}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error interno del servidor") from e
+
+
+@app.put("/tasks/{task_id}/subtasks/reorder")
+@limiter.limit("30/minute")
+async def reorder_subtasks(
+    request: Request,
+    task_id: int,
+    payload: SubtaskReorderPayload,
+    user_id: str = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    validate_task_id(task_id)
+    await verify_task_owner(task_id, user_id, db)
+    try:
+        for st in payload.subtasks:
+            db.table("subtasks").update({"order_index": st.order_index}).eq("id", st.id).eq("task_id", task_id).execute()
+        invalidate_cache(user_id)
+        return {"message": "Subtareas reordenadas"}
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error interno del servidor") from e
